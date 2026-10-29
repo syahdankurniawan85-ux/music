@@ -1,0 +1,4 @@
+window.NEONWAVE_SUPABASE_CONFIG = {
+  url: "PROJECT_URL_LU",
+  anonKey: "PUBLISHABLE_KEY_LU"
+};
