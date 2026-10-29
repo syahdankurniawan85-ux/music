@@ -384,10 +384,6 @@ renderTracks();
 updatePlayer();
 
 // ---------------- ACCOUNT + CLOUD DATABASE (Supabase) ----------------
-let authMode = "login";
-let cloudSaveTimer = null;
-let cloudReady = false;
-let applyingCloudData = false;
 
 function getSupabaseConfig() {
   const config = window.NEONWAVE_SUPABASE_CONFIG || {};
