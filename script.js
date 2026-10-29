@@ -41,16 +41,19 @@ function savePlaylists() {
   try { localStorage.setItem("neonwave-playlists", JSON.stringify(playlists)); }
   catch { showToast("Browser tidak bisa menyimpan playlist."); }
   $("#playlistCount").textContent = playlists.length;
+  scheduleCloudSave();
 }
 function saveQueue() {
   try { localStorage.setItem("neonwave-queue", JSON.stringify(queue)); }
   catch { showToast("Browser tidak bisa menyimpan antrean."); }
   $("#queueCount").textContent = queue.length;
+  scheduleCloudSave();
 }
 function saveFavorites() {
   try { localStorage.setItem("neonwave-favorites", JSON.stringify(favorites)); }
   catch { showToast("Browser tidak bisa menyimpan favorit."); }
   $("#favoriteCount").textContent = favorites.length;
+  scheduleCloudSave();
 }
 function showToast(message) {
   const toast = $("#toast");
@@ -372,3 +375,170 @@ renderPlaylists();
 renderQueue();
 renderTracks();
 updatePlayer();
+
+// ---------------- ACCOUNT + CLOUD DATABASE (Supabase) ----------------
+let supabaseClient = null;
+let signedInUser = null;
+let authMode = "login";
+let cloudSaveTimer = null;
+let cloudReady = false;
+let applyingCloudData = false;
+
+function getSupabaseConfig() {
+  const config = window.NEONWAVE_SUPABASE_CONFIG || {};
+  return config.url && config.anonKey &&
+    !config.url.includes("PASTE_") && !config.anonKey.includes("PASTE_") &&
+    /^https:\/\/.+/.test(config.url) ? config : null;
+}
+function setAuthStatus(message, isError = false) {
+  const el = $("#authStatus");
+  el.textContent = message;
+  el.classList.toggle("error", isError);
+}
+function updateAccountUI() {
+  const label = $("#accountButtonLabel");
+  const avatar = document.querySelector(".account-avatar");
+  label.textContent = signedInUser ? (signedInUser.email.split("@")[0] || "Akun") : "Masuk";
+  avatar.textContent = signedInUser ? (signedInUser.email.slice(0, 2).toUpperCase()) : "NW";
+  $("#authTitle").textContent = signedInUser ? "Akun NEONWAVE" : (authMode === "login" ? "Masuk ke NEONWAVE" : "Buat akun NEONWAVE");
+  $("#authDescription").textContent = signedInUser
+    ? `Login sebagai ${signedInUser.email}. Playlist dan favorit bisa disimpan di database akunmu.`
+    : "Masuk atau daftar untuk menyimpan playlist, antrean, dan favorit ke database.";
+  $("#authForm").classList.toggle("hidden", Boolean(signedInUser));
+  $("#authModeToggle").classList.toggle("hidden", Boolean(signedInUser));
+  $("#signOutButton").classList.toggle("hidden", !signedInUser);
+  $("#authSetupNote").classList.toggle("hidden", Boolean(supabaseClient));
+  $("#authSubmit").textContent = authMode === "login" ? "Masuk" : "Daftar";
+  $("#authModeToggle").textContent = authMode === "login" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk";
+}
+function scheduleCloudSave() {
+  if (!signedInUser || !supabaseClient || applyingCloudData) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(saveCloudData, 700);
+}
+async function saveCloudData() {
+  if (!signedInUser || !supabaseClient || applyingCloudData) return;
+  const payload = {
+    user_id: signedInUser.id,
+    favorites,
+    playlists,
+    queue,
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabaseClient.from("neonwave_user_data").upsert(payload, { onConflict: "user_id" });
+  if (error) {
+    console.error("NEONWAVE cloud save:", error.message);
+    showToast("Gagal menyimpan ke cloud. Data lokal tetap aman.");
+  }
+}
+async function loadCloudData() {
+  if (!signedInUser || !supabaseClient) return;
+  const { data, error } = await supabaseClient.from("neonwave_user_data")
+    .select("favorites,playlists,queue").eq("user_id", signedInUser.id).maybeSingle();
+  if (error) {
+    console.error("NEONWAVE cloud load:", error.message);
+    showToast("Data cloud belum bisa dimuat. Cek konfigurasi database.");
+    return;
+  }
+  applyingCloudData = true;
+  if (data) {
+    favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id)) : [];
+    playlists = Array.isArray(data.playlists) ? data.playlists.filter(p => p && p.id && p.name && Array.isArray(p.trackIds)) : [];
+    queue = Array.isArray(data.queue) ? data.queue.filter(id => tracks.some(t => t.id === id)) : [];
+    try {
+      localStorage.setItem("neonwave-favorites", JSON.stringify(favorites));
+      localStorage.setItem("neonwave-playlists", JSON.stringify(playlists));
+      localStorage.setItem("neonwave-queue", JSON.stringify(queue));
+    } catch {}
+  } else {
+    // First login: upload current browser data as the user's initial cloud library.
+    applyingCloudData = false;
+    await saveCloudData();
+    applyingCloudData = true;
+  }
+  applyingCloudData = false;
+  saveFavorites();
+  savePlaylists();
+  saveQueue();
+  renderPlaylists();
+  renderQueue();
+  renderTracks();
+  updatePlayer();
+}
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  if (!supabaseClient) {
+    setAuthStatus("Supabase belum dikonfigurasi. Ikuti langkah config.js dan SQL di README.", true);
+    return;
+  }
+  const email = $("#authEmail").value.trim();
+  const password = $("#authPassword").value;
+  const submit = $("#authSubmit");
+  submit.disabled = true;
+  setAuthStatus(authMode === "login" ? "Sedang masuk..." : "Sedang membuat akun...");
+  try {
+    const result = authMode === "login"
+      ? await supabaseClient.auth.signInWithPassword({ email, password })
+      : await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href.split("#")[0] } });
+    if (result.error) throw result.error;
+    if (authMode === "signup" && !result.data.session) {
+      setAuthStatus("Akun dibuat. Cek email untuk konfirmasi, lalu login.");
+      return;
+    }
+    signedInUser = result.data.user || null;
+    updateAccountUI();
+    if (signedInUser) {
+      await loadCloudData();
+      setAuthStatus("Berhasil masuk. Data akun sudah disinkronkan.");
+      showToast("Login berhasil.");
+    }
+  } catch (error) {
+    setAuthStatus(error.message || "Login gagal. Coba lagi.", true);
+  } finally {
+    submit.disabled = false;
+  }
+}
+async function initializeAccount() {
+  const config = getSupabaseConfig();
+  if (config && window.supabase?.createClient) {
+    supabaseClient = window.supabase.createClient(config.url, config.anonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    const { data } = await supabaseClient.auth.getSession();
+    signedInUser = data.session?.user || null;
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      signedInUser = session?.user || null;
+      updateAccountUI();
+      if (event === "SIGNED_IN" && signedInUser) setTimeout(loadCloudData, 0);
+      if (event === "SIGNED_OUT") showToast("Kamu sudah keluar.");
+    });
+    if (signedInUser) await loadCloudData();
+  }
+  updateAccountUI();
+}
+$("#accountButton").addEventListener("click", () => {
+  if (!supabaseClient) setAuthStatus("Mode login belum aktif. Isi config.js dan setup database Supabase.", true);
+  else setAuthStatus("");
+  updateAccountUI();
+  $("#authDialog").showModal();
+});
+$("#authClose").addEventListener("click", () => $("#authDialog").close());
+$("#authForm").addEventListener("submit", handleAuthSubmit);
+$("#authModeToggle").addEventListener("click", () => {
+  authMode = authMode === "login" ? "signup" : "login";
+  $("#authPassword").setAttribute("autocomplete", authMode === "login" ? "current-password" : "new-password");
+  setAuthStatus("");
+  updateAccountUI();
+});
+$("#signOutButton").addEventListener("click", async () => {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) return setAuthStatus(error.message, true);
+  signedInUser = null;
+  updateAccountUI();
+  setAuthStatus("Kamu sudah keluar. Data cloud tetap tersimpan di akunmu.");
+  $("#authPassword").value = "";
+});
+
+initializeAccount();
+

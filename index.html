@@ -10,6 +10,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js" defer></script>
   <script src="script.js" defer></script>
 </head>
 <body>
@@ -35,7 +37,10 @@
       <header class="topbar">
         <div class="mobile-brand"><span class="brand-mark">N</span><span>NEON<span class="brand-accent">WAVE</span></span></div>
         <div class="breadcrumb"><span>LIBRARY</span><span class="crumb-slash">/</span><strong id="viewTitle">Discover</strong></div>
-        <label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Cari lagu atau artis..." autocomplete="off" aria-label="Cari lagu atau artis"><kbd>/</kbd></label>
+        <div class="topbar-actions">
+          <label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Cari lagu atau artis..." autocomplete="off" aria-label="Cari lagu atau artis"><kbd>/</kbd></label>
+          <button class="account-button" id="accountButton" type="button"><span class="account-avatar">NW</span><span id="accountButtonLabel">Masuk</span></button>
+        </div>
       </header>
 
       <section class="hero">
@@ -121,6 +126,24 @@
     </form>
   </dialog>
 
+  <dialog class="nw-dialog auth-dialog" id="authDialog" aria-labelledby="authTitle">
+    <div class="dialog-heading">
+      <div><p class="eyebrow">YOUR NEONWAVE ACCOUNT</p><h2 id="authTitle">Masuk ke NEONWAVE</h2></div>
+      <button class="icon-button dialog-close" id="authClose" type="button" aria-label="Tutup">×</button>
+    </div>
+    <p class="muted small" id="authDescription">Simpan playlist dan favorit ke akunmu agar bisa diakses lagi setelah login.</p>
+    <form id="authForm" class="auth-form">
+      <label for="authEmail">Email</label>
+      <input id="authEmail" name="email" type="email" autocomplete="email" placeholder="nama@email.com" required>
+      <label for="authPassword">Password</label>
+      <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" placeholder="Minimal 6 karakter" required>
+      <button class="primary-button" id="authSubmit" type="submit">Masuk</button>
+      <button class="secondary-button" id="authModeToggle" type="button">Belum punya akun? Daftar</button>
+    </form>
+    <div class="auth-status" id="authStatus" role="status" aria-live="polite"></div>
+    <button class="secondary-button auth-signout hidden" id="signOutButton" type="button">Keluar dari akun</button>
+    <p class="auth-setup-note hidden" id="authSetupNote">Login belum dikonfigurasi. Isi URL dan anon key Supabase di file config.js, lalu jalankan SQL dari README.</p>
+  </dialog>
   <audio id="audio" preload="metadata"></audio>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
