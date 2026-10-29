@@ -384,7 +384,6 @@ renderTracks();
 updatePlayer();
 
 // ---------------- ACCOUNT + CLOUD DATABASE (Supabase) ----------------
-let signedInUser = null;
 let authMode = "login";
 let cloudSaveTimer = null;
 let cloudReady = false;
