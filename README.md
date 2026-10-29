@@ -1,17 +1,24 @@
-# NEONWAVE Premium UI update
+# NEONWAVE — Playlist & Queue Update
 
-This update focuses on the visual layer. It keeps the existing HTML element IDs and JavaScript logic intact.
+## Fitur baru
+- Membuat dan menghapus playlist.
+- Menambahkan lagu ke playlist dari daftar lagu.
+- Memutar playlist berdasarkan urutan lagu.
+- Menambahkan lagu ke antrean, mengubah urutan naik/turun, memutar langsung, menghapus item, dan mengosongkan antrean.
+- Antrean diprioritaskan saat lagu selesai.
+- Playlist dan antrean tersimpan di localStorage browser/perangkat yang sama.
 
-## Files
-- `index.html` — same page structure
-- `style.css` — original styles plus a premium visual override layer at the end
-- `script.js` — existing player functionality preserved
+## File yang diperbarui
+- `index.html`: navigasi Playlists, form playlist, dialog antrean dan pemilih playlist.
+- `script.js`: logika playlist, antrean, penyimpanan lokal, dan tombol tambah.
+- `style.css`: gaya tambahan yang mempertahankan tema premium.
 
-## Install on GitHub Pages
-1. Download and extract `neonwave-premium-update.zip`.
-2. Open your GitHub Pages repository.
-3. Upload all three files to the repository root.
-4. Confirm replacement of the existing files, then commit the changes.
-5. Open the published website and hard-refresh with Ctrl+F5.
+## Cara memasang di GitHub Pages
+1. Download/backup repository yang sekarang.
+2. Ekstrak ZIP update ini.
+3. Upload/replace `index.html`, `style.css`, dan `script.js` di root repository.
+4. Commit dengan pesan `Add playlists and queue`.
+5. Buka situs GitHub Pages lalu hard refresh dengan `Ctrl + F5`.
 
-Keep the three files in the same folder. This is a frontend-only static site; account sync and payments require a backend.
+## Catatan
+Data playlist dan antrean disimpan di browser/perangkat yang sama; belum tersinkron antar perangkat/pengguna. Audio demo masih memakai URL contoh yang sudah ada. Untuk penggunaan komersial, ganti dengan audio yang memiliki izin/lisensi.

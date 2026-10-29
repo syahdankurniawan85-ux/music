@@ -20,6 +20,7 @@
       <nav class="main-nav" aria-label="Navigasi utama">
         <button class="nav-item active" data-view="discover"><span>◈</span> Discover</button>
         <button class="nav-item" data-view="favorites"><span>♡</span> Favorites <span class="nav-count" id="favoriteCount">0</span></button>
+        <button class="nav-item" data-view="playlists"><span>▤</span> Playlists <span class="nav-count" id="playlistCount">0</span></button>
       </nav>
       <div class="sidebar-note">
         <span class="note-orb"></span>
@@ -52,8 +53,23 @@
         </div>
       </section>
 
+      <section class="playlist-tools hidden" id="playlistTools" aria-label="Kelola playlist">
+        <form class="playlist-create" id="playlistForm">
+          <div>
+            <p class="eyebrow">MAKE IT YOURS</p>
+            <h2>Bikin playlist sendiri</h2>
+            <p class="muted small">Kumpulkan lagu sesuai mood dan simpan di browser ini.</p>
+          </div>
+          <div class="playlist-create-fields">
+            <input id="playlistNameInput" type="text" maxlength="40" placeholder="Contoh: Night Drive" aria-label="Nama playlist" required>
+            <button class="primary-button" type="submit">＋ Buat playlist</button>
+          </div>
+        </form>
+        <div class="playlist-cards" id="playlistCards"></div>
+      </section>
+
       <section class="section-block">
-        <div class="section-heading"><div><p class="eyebrow">CURATED FOR YOU</p><h2 id="listHeading">Trending tracks <span class="heading-dot">.</span></h2></div><span class="track-total" id="trackTotal">06 TRACKS</span></div>
+        <div class="section-heading"><div><p class="eyebrow" id="listEyebrow">CURATED FOR YOU</p><h2 id="listHeading">Trending tracks <span class="heading-dot">.</span></h2></div><span class="track-total" id="trackTotal">06 TRACKS</span></div>
         <div class="track-list" id="trackList" aria-live="polite"></div>
         <p class="empty-state hidden" id="emptyState">Belum ada lagu yang cocok. Coba kata pencarian lain.</p>
       </section>
@@ -77,8 +93,34 @@
       </div>
       <div class="timeline"><span id="currentTime">0:00</span><input id="progressBar" type="range" min="0" max="100" value="0" aria-label="Posisi lagu"><span id="duration">0:00</span></div>
     </div>
-    <div class="volume-area"><span aria-hidden="true">◖</span><input id="volumeBar" type="range" min="0" max="1" step="0.01" value="0.75" aria-label="Volume"><button class="icon-button queue-button" id="queueButton" title="Kembali ke Discover" aria-label="Kembali ke Discover">☷</button></div>
+    <div class="volume-area"><span aria-hidden="true">◖</span><input id="volumeBar" type="range" min="0" max="1" step="0.01" value="0.75" aria-label="Volume"><button class="icon-button queue-button" id="queueButton" title="Buka antrean" aria-label="Buka antrean">☷ <span class="queue-count" id="queueCount">0</span></button></div>
   </section>
+  <dialog class="nw-dialog" id="queueDialog" aria-labelledby="queueDialogTitle">
+    <div class="dialog-heading">
+      <div><p class="eyebrow">UP NEXT</p><h2 id="queueDialogTitle">Antrean lagu</h2></div>
+      <button class="icon-button dialog-close" data-close-dialog="queueDialog" aria-label="Tutup antrean">×</button>
+    </div>
+    <div class="queue-now" id="queueNow"></div>
+    <div class="queue-items" id="queueItems"></div>
+    <div class="dialog-footer">
+      <button class="secondary-button" id="clearQueueButton" type="button">Kosongkan antrean</button>
+      <button class="primary-button" data-close-dialog="queueDialog" type="button">Selesai</button>
+    </div>
+  </dialog>
+
+  <dialog class="nw-dialog" id="playlistDialog" aria-labelledby="playlistDialogTitle">
+    <div class="dialog-heading">
+      <div><p class="eyebrow">SAVE THIS TRACK</p><h2 id="playlistDialogTitle">Tambahkan ke playlist</h2></div>
+      <button class="icon-button dialog-close" data-close-dialog="playlistDialog" aria-label="Tutup">×</button>
+    </div>
+    <p class="muted small" id="playlistTrackLabel"></p>
+    <div class="playlist-choices" id="playlistChoices"></div>
+    <form class="playlist-create-fields dialog-create" id="dialogPlaylistForm">
+      <input id="dialogPlaylistName" type="text" maxlength="40" placeholder="Atau buat playlist baru..." aria-label="Nama playlist baru">
+      <button class="secondary-button" type="submit">＋ Buat</button>
+    </form>
+  </dialog>
+
   <audio id="audio" preload="metadata"></audio>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
