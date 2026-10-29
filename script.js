@@ -16,6 +16,13 @@ let query = "";
 let shuffle = false;
 let repeat = false;
 let toastTimer;
+let supabaseClient = null;
+let signedInUser = null;
+let authMode = "login";
+let cloudSaveTimer = null;
+let cloudReady = false;
+let applyingCloudData = false;
+
 
 function readFavorites() {
   try { return JSON.parse(localStorage.getItem("neonwave-favorites") || "[]"); }
@@ -377,7 +384,6 @@ renderTracks();
 updatePlayer();
 
 // ---------------- ACCOUNT + CLOUD DATABASE (Supabase) ----------------
-let supabaseClient = null;
 let signedInUser = null;
 let authMode = "login";
 let cloudSaveTimer = null;
