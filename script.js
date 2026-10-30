@@ -7,7 +7,7 @@ const tracks = [
   { id: 5, title: "Electric Bloom", artist: "Mira Sol", genre: "Dream Pop", duration: "3:51", cover: "cover-5", initials: "EB", audio: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3" },
   { id: 6, title: "Soft Focus", artist: "The Blue Hours", genre: "Lo-fi", duration: "2:59", cover: "cover-6", initials: "SF", audio: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3" },
   // Ganti judul/artis di bawah dengan metadata video yang sebenarnya jika sudah diketahui.
-  { id: 7, title: "Lagu YouTube (ubah judul)", artist: "Nama artis (ubah)", genre: "YouTube", duration: "Video", cover: "cover-7", initials: "YT", youtubeId: "DeCO1sct6GI" }
+  { id: 7, title: "Mbak Bilie (6sentani)", artist: "Nama artis (ubah)", genre: "YouTube", duration: "Video", cover: "cover-7", initials: "YT", youtubeId: "DeCO1sct6GI" }
 ];
 
 const $ = (selector) => document.querySelector(selector);
