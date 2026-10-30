@@ -83,6 +83,47 @@ let youtubeApiPromise = null;
 let youtubePlayerPromise = null;
 let youtubeSyncTimer = null;
 let youtubePlayRequest = 0;
+let youtubeSearchResults = [];
+let youtubeSearchTimer = null;
+let youtubeSearchController = null;
+let youtubeSearchRequest = 0;
+let activePlaybackTrack = null;
+const youtubeSearchCache = new Map();
+
+
+function getTrackById(trackId) {
+  if (!trackId) return null;
+  return tracks.find(track => track.id === trackId)
+    || youtubeSearchResults.find(track => track.id === trackId)
+    || (activePlaybackTrack?.id === trackId ? activePlaybackTrack : null);
+}
+
+function getTrackByYouTubeId(videoId) {
+  return tracks.find(track => track.youtubeId === videoId)
+    || youtubeSearchResults.find(track => track.youtubeId === videoId)
+    || (activePlaybackTrack?.youtubeId === videoId ? activePlaybackTrack : null);
+}
+
+function promptForAccount(message = "Masuk ke akun NEONWAVE untuk menyimpan lagu dari hasil pencarian.") {
+  showToast(message);
+  setAuthStatus(message);
+  updateAccountUI();
+  if (!$("#authDialog").open) $("#authDialog").showModal();
+}
+
+function ensureSearchTrackSaved(track) {
+  if (!track?.youtubeId || !track.isYouTubeSearchResult) return true;
+  if (builtInTracks.some(item => item.youtubeId === track.youtubeId)
+      || customTracks.some(item => item.youtubeId === track.youtubeId)) return true;
+  if (!signedInUser || !supabaseClient) {
+    promptForAccount("Login dulu untuk menyimpan hasil pencarian ke Favorites, Playlist, atau Queue.");
+    return false;
+  }
+  const next = [{ title: track.title, artist: track.artist, youtubeId: track.youtubeId }, ...customTracks];
+  applyCustomTracks(next);
+  scheduleCloudSave();
+  return true;
+}
 
 function readFavorites() {
   try { return JSON.parse(localStorage.getItem("neonwave-favorites") || "[]"); }
@@ -102,7 +143,7 @@ let playlistTargetTrackId = null;
 let queuePlaybackIds = [];
 let queuePlaybackIndex = -1;
 playlists = Array.isArray(playlists) ? playlists.filter(item => item && item.id && item.name && Array.isArray(item.trackIds)) : [];
-queue = Array.isArray(queue) ? queue.filter(id => tracks.some(track => track.id === id)) : [];
+queue = Array.isArray(queue) ? queue.filter(id => getTrackById(id)) : [];
 
 function savePlaylists() {
   try { localStorage.setItem("neonwave-playlists", JSON.stringify(playlists)); }
@@ -159,7 +200,7 @@ function renderPlaylists() {
     open.addEventListener("click", () => { activePlaylistId = playlist.id; setView("playlists"); });
     const play = document.createElement("button"); play.className = "icon-button"; play.type = "button"; play.textContent = "▶"; play.title = "Putar playlist";
     play.addEventListener("click", () => {
-      const ids = playlist.trackIds.filter(id => tracks.some(track => track.id === id));
+      const ids = playlist.trackIds.filter(id => getTrackById(id));
       if (!ids.length) return showToast("Playlist ini masih kosong.");
       activePlaylistId = playlist.id;
       setView("playlists");
@@ -198,18 +239,22 @@ function renderPlaylistChoices() {
   });
 }
 function openPlaylistDialog(trackId) {
-  const track = tracks.find(item => item.id === trackId); if (!track) return;
+  const track = getTrackById(trackId); if (!track) return;
+  if (!ensureSearchTrackSaved(track)) return;
   playlistTargetTrackId = trackId; $("#playlistTrackLabel").textContent = `${track.title} — ${track.artist}`;
   $("#dialogPlaylistName").value = ""; renderPlaylistChoices(); $("#playlistDialog").showModal();
 }
 function addTrackToPlaylist(playlistId, trackId) {
   const playlist = playlists.find(item => item.id === playlistId); if (!playlist || !trackId) return;
+  const track = getTrackById(trackId);
+  if (!track || !ensureSearchTrackSaved(track)) return;
   if (playlist.trackIds.includes(trackId)) showToast("Lagu ini sudah ada di playlist.");
   else { playlist.trackIds.push(trackId); savePlaylists(); renderPlaylists(); renderTracks(); showToast(`Ditambahkan ke "${playlist.name}".`); }
   $("#playlistDialog").close();
 }
 function addToQueue(trackId) {
-  if (!tracks.some(track => track.id === trackId)) return;
+  const track = getTrackById(trackId);
+  if (!track || !ensureSearchTrackSaved(track)) return;
   queue.push(trackId); saveQueue(); renderQueue(); showToast("Lagu ditambahkan ke antrean.");
 }
 
@@ -277,14 +322,14 @@ async function addYouTubeTrack(event) {
 function renderQueue() {
   const host = $("#queueItems"); if (!host) return;
   host.innerHTML = ""; $("#queueCount").textContent = queue.length;
-  const now = tracks.find(track => track.id === currentTrackId);
+  const now = currentTrack();
   $("#queueNow").textContent = now ? `Sedang diputar: ${now.title} — ${now.artist}` : "Belum ada lagu yang sedang diputar.";
   if (!queue.length) {
     const empty = document.createElement("p"); empty.className = "queue-empty";
     empty.textContent = "Antrean masih kosong. Tambahkan lagu lewat tombol + di daftar lagu."; host.appendChild(empty); return;
   }
   queue.forEach((trackId, index) => {
-    const track = tracks.find(item => item.id === trackId); if (!track) return;
+    const track = getTrackById(trackId); if (!track) return;
     const row = document.createElement("div"); row.className = "queue-row";
     const number = document.createElement("span"); number.className = "queue-index"; number.textContent = String(index + 1).padStart(2, "0");
     const info = document.createElement("div"); info.className = "queue-track-copy";
@@ -317,7 +362,9 @@ function renderTracks() {
   $("#emptyState").textContent = currentView === "playlists" && !selectedPlaylist
     ? "Pilih playlist di atas untuk melihat lagu, atau buat playlist baru."
     : currentView === "playlists" ? "Playlist ini masih kosong. Tambahkan lagu lewat tombol playlist pada daftar Discover."
-    : "Belum ada lagu yang cocok. Coba kata pencarian lain.";
+    : currentView === "discover" && query.length >= 2
+      ? "Belum ada lagu di katalog pribadi yang cocok. Hasil pencarian YouTube muncul di atas."
+      : "Belum ada lagu yang cocok. Coba kata pencarian lain.";
 
   visibleTracks.forEach((track, index) => {
     const isPlaying = currentTrackId === track.id && isPlaybackActive();
@@ -366,12 +413,18 @@ function setView(view) {
   if (view !== "playlists") activePlaylistId = null;
   renderPlaylists();
   renderTracks();
+  if (view === "discover" && query.length >= 2) {
+    clearTimeout(youtubeSearchTimer);
+    youtubeSearchTimer = setTimeout(() => searchYouTubeVideos(query), 180);
+  } else {
+    clearYouTubeSearch();
+  }
 }
 function isYouTubeTrack(track) {
   return Boolean(track && track.youtubeId);
 }
 function currentTrack() {
-  return tracks.find(item => item.id === currentTrackId) || null;
+  return getTrackById(currentTrackId);
 }
 function isPlaybackActive() {
   const track = currentTrack();
@@ -496,9 +549,13 @@ function updatePlayer(renderList = true) {
   $("#progressBar").value = duration ? (currentTime / duration) * 100 : 0;
   if (renderList) renderTracks();
 }
-async function playTrack(id) {
-  const track = tracks.find(item => item.id === id);
+async function playTrack(idOrTrack) {
+  const track = typeof idOrTrack === "object" && idOrTrack
+    ? idOrTrack
+    : getTrackById(idOrTrack);
   if (!track) return;
+  const id = track.id;
+  activePlaybackTrack = track;
   const requestId = ++youtubePlayRequest;
 
   if (isYouTubeTrack(track)) {
@@ -506,6 +563,9 @@ async function playTrack(id) {
     currentTrackId = id;
     $("#youtubePanel").classList.remove("hidden");
     $("#youtubeVideoTitle").textContent = `${track.title} — ${track.artist}`;
+    if (track.isYouTubeSearchResult) {
+      $("#youtubePanel").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     updatePlayer();
     try {
       const player = await ensureYouTubePlayer();
@@ -544,6 +604,8 @@ function pauseTrack() {
   updatePlayer();
 }
 function toggleFavorite(id) {
+  const track = getTrackById(id);
+  if (!track || !ensureSearchTrackSaved(track)) return;
   if (favorites.includes(id)) {
     favorites = favorites.filter(favoriteId => favoriteId !== id);
     showToast("Lagu dihapus dari favorit.");
@@ -552,6 +614,7 @@ function toggleFavorite(id) {
     showToast("Lagu ditambahkan ke favorit.");
   }
   saveFavorites();
+  renderYouTubeSearchResults();
   updatePlayer();
 }
 function playNext(direction = 1) {
@@ -560,13 +623,26 @@ function playNext(direction = 1) {
   }
   if (currentView === "playlists" && activePlaylistId) {
     const playlist = playlists.find(item => item.id === activePlaylistId);
-    const pool = (playlist?.trackIds || []).map(id => tracks.find(track => track.id === id)).filter(Boolean);
+    const pool = (playlist?.trackIds || []).map(id => getTrackById(id)).filter(Boolean);
     if (pool.length) {
       let index = pool.findIndex(track => track.id === currentTrackId), nextIndex;
       if (shuffle && pool.length > 1) { do { nextIndex = Math.floor(Math.random() * pool.length); } while (nextIndex === index); }
       else nextIndex = index < 0 ? (direction > 0 ? 0 : pool.length - 1) : (index + direction + pool.length) % pool.length;
       playTrack(pool[nextIndex].id); return;
     }
+  }
+  const active = currentTrack();
+  if (active?.isYouTubeSearchResult && youtubeSearchResults.length) {
+    const searchPool = youtubeSearchResults;
+    let searchIndex = searchPool.findIndex(track => track.id === currentTrackId), nextSearchIndex;
+    if (shuffle && searchPool.length > 1) {
+      do { nextSearchIndex = Math.floor(Math.random() * searchPool.length); } while (nextSearchIndex === searchIndex);
+    } else {
+      nextSearchIndex = searchIndex < 0 ? (direction > 0 ? 0 : searchPool.length - 1)
+        : (searchIndex + direction + searchPool.length) % searchPool.length;
+    }
+    playTrack(searchPool[nextSearchIndex]);
+    return;
   }
   const pool = filteredTracks().length ? filteredTracks() : tracks;
   if (!pool.length) return;
@@ -576,8 +652,226 @@ function playNext(direction = 1) {
   playTrack(pool[nextIndex].id);
 }
 
+function getYouTubeApiKey() {
+  const key = window.NEONWAVE_SUPABASE_CONFIG?.youtubeApiKey;
+  return typeof key === "string" && key.trim() && !key.includes("PASTE_") ? key.trim() : "";
+}
+
+function clearYouTubeSearch() {
+  youtubeSearchRequest++;
+  if (youtubeSearchController) youtubeSearchController.abort();
+  youtubeSearchController = null;
+  youtubeSearchResults = [];
+  $("#youtubeSearchSection").classList.add("hidden");
+  $("#youtubeSearchResults").innerHTML = "";
+  $("#youtubeSearchStatus").textContent = "";
+}
+
+function showYouTubeSearchMessage(message, isError = false) {
+  $("#youtubeSearchStatus").textContent = message;
+  $("#youtubeSearchStatus").classList.toggle("error", isError);
+}
+
+function renderYouTubeSearchResults() {
+  const host = $("#youtubeSearchResults");
+  host.innerHTML = "";
+  youtubeSearchResults.forEach((track, index) => {
+    const card = document.createElement("article");
+    card.className = "youtube-result-card";
+
+    const thumbnailLink = document.createElement("a");
+    thumbnailLink.className = "youtube-result-thumbnail";
+    thumbnailLink.href = `https://www.youtube.com/watch?v=${encodeURIComponent(track.youtubeId)}`;
+    thumbnailLink.target = "_blank";
+    thumbnailLink.rel = "noopener noreferrer";
+    thumbnailLink.setAttribute("aria-label", `Buka ${track.title} di YouTube`);
+    const image = document.createElement("img");
+    image.src = track.thumbnailUrl || `https://i.ytimg.com/vi/${track.youtubeId}/hqdefault.jpg`;
+    image.alt = `Thumbnail YouTube: ${track.title}`;
+    image.loading = "lazy";
+    thumbnailLink.appendChild(image);
+
+    const content = document.createElement("div");
+    content.className = "youtube-result-content";
+    const title = document.createElement("strong");
+    title.className = "youtube-result-title";
+    title.textContent = track.title;
+    const channel = document.createElement("span");
+    channel.className = "youtube-result-channel";
+    channel.textContent = track.artist;
+    const source = document.createElement("span");
+    source.className = "youtube-result-source";
+    source.textContent = "YouTube video";
+    content.append(title, channel, source);
+
+    const actions = document.createElement("div");
+    actions.className = "youtube-result-actions";
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "primary-button youtube-result-play";
+    play.textContent = "▶ Putar";
+    play.addEventListener("click", () => playTrack(track));
+
+    const favorite = document.createElement("button");
+    favorite.type = "button";
+    favorite.className = `icon-button youtube-result-icon${favorites.includes(track.id) ? " favorited" : ""}`;
+    favorite.textContent = favorites.includes(track.id) ? "♥" : "♡";
+    favorite.title = favorites.includes(track.id) ? "Hapus dari favorit" : "Tambahkan ke favorit";
+    favorite.setAttribute("aria-label", favorite.title);
+    favorite.addEventListener("click", () => {
+      toggleFavorite(track.id);
+      favorite.textContent = favorites.includes(track.id) ? "♥" : "♡";
+      favorite.classList.toggle("favorited", favorites.includes(track.id));
+    });
+
+    const queueButton = document.createElement("button");
+    queueButton.type = "button";
+    queueButton.className = "icon-button youtube-result-icon";
+    queueButton.textContent = "＋";
+    queueButton.title = "Tambahkan ke antrean";
+    queueButton.addEventListener("click", () => addToQueue(track.id));
+
+    const playlistButton = document.createElement("button");
+    playlistButton.type = "button";
+    playlistButton.className = "icon-button youtube-result-icon";
+    playlistButton.textContent = "▤";
+    playlistButton.title = "Tambahkan ke playlist";
+    playlistButton.addEventListener("click", () => openPlaylistDialog(track.id));
+
+    actions.append(play, favorite, queueButton, playlistButton);
+    card.append(thumbnailLink, content, actions);
+    host.appendChild(card);
+  });
+}
+
+async function searchYouTubeVideos(searchTerm) {
+  const term = searchTerm.trim();
+  if (currentView !== "discover" || term.length < 2) {
+    clearYouTubeSearch();
+    return;
+  }
+
+  const section = $("#youtubeSearchSection");
+  section.classList.remove("hidden");
+  $("#youtubeSearchHeading").textContent = `Hasil YouTube untuk “${term}”`;
+  const apiKey = getYouTubeApiKey();
+  if (!apiKey) {
+    youtubeSearchResults = [];
+    renderYouTubeSearchResults();
+    showYouTubeSearchMessage("Pencarian langsung belum aktif. Tambahkan youtubeApiKey di config.js setelah mengaktifkan YouTube Data API v3 di Google Cloud.", true);
+    return;
+  }
+
+  const cacheKey = term.toLocaleLowerCase("id-ID");
+  if (youtubeSearchCache.has(cacheKey)) {
+    youtubeSearchResults = youtubeSearchCache.get(cacheKey);
+    renderYouTubeSearchResults();
+    showYouTubeSearchMessage(`${youtubeSearchResults.length} hasil ditemukan dari YouTube.`);
+    return;
+  }
+
+  const requestId = ++youtubeSearchRequest;
+  if (youtubeSearchController) youtubeSearchController.abort();
+  youtubeSearchController = new AbortController();
+  showYouTubeSearchMessage(`Sedang mencari “${term}” di YouTube...`);
+  $("#youtubeSearchResults").innerHTML = "";
+
+  const params = new URLSearchParams({
+    part: "snippet",
+    q: term,
+    type: "video",
+    maxResults: "12",
+    videoEmbeddable: "true",
+    videoSyndicated: "true",
+    safeSearch: "moderate",
+    regionCode: "ID",
+    relevanceLanguage: "id",
+    key: apiKey
+  });
+
+  try {
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params.toString()}`, {
+      method: "GET",
+      signal: youtubeSearchController.signal
+    });
+    const payload = await response.json();
+    if (requestId !== youtubeSearchRequest || currentView !== "discover") return;
+    if (!response.ok) {
+      const reason = payload?.error?.errors?.[0]?.reason || payload?.error?.status || "unknown";
+      if (["quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"].includes(reason)) {
+        throw new Error("Kuota pencarian YouTube hari ini habis. Coba lagi besok atau periksa kuota API di Google Cloud.");
+      }
+      if (["keyInvalid", "accessNotConfigured", "forbidden"].includes(reason)) {
+        throw new Error("API key YouTube belum valid atau YouTube Data API v3 belum diaktifkan. Periksa konfigurasi Google Cloud.");
+      }
+      throw new Error(payload?.error?.message || "Pencarian YouTube gagal. Periksa API key dan koneksi internet.");
+    }
+
+    const results = (Array.isArray(payload.items) ? payload.items : []).map(item => {
+      const videoId = item?.id?.videoId;
+      const snippet = item?.snippet;
+      if (!videoId || !YOUTUBE_ID_PATTERN.test(videoId) || !snippet?.title) return null;
+      // Only tracks already in this user's loaded catalog count as saved.
+      // Previous search results and the active preview must not bypass account saving.
+      const existing = tracks.find(track => track.youtubeId === videoId);
+      return {
+        id: existing?.id || `yt_${videoId}`,
+        title: existing?.title || snippet.title,
+        artist: existing?.artist || snippet.channelTitle || "YouTube",
+        genre: "YouTube",
+        duration: "Video",
+        cover: "cover-7",
+        initials: "YT",
+        youtubeId: videoId,
+        thumbnailUrl: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        isYouTubeSearchResult: !existing,
+        isCustomYouTube: Boolean(existing?.isCustomYouTube)
+      };
+    }).filter(Boolean);
+
+    youtubeSearchResults = results;
+    youtubeSearchCache.set(cacheKey, results);
+    if (youtubeSearchCache.size > 18) youtubeSearchCache.delete(youtubeSearchCache.keys().next().value);
+    renderYouTubeSearchResults();
+    showYouTubeSearchMessage(results.length
+      ? `${results.length} hasil ditemukan. Pilih Putar untuk membuka pemutar YouTube resmi.`
+      : "Belum ada hasil. Coba judul lagu atau nama artis yang lain.");
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    if (requestId !== youtubeSearchRequest) return;
+    youtubeSearchResults = [];
+    renderYouTubeSearchResults();
+    showYouTubeSearchMessage(error.message || "Pencarian YouTube gagal.", true);
+  }
+}
+
+function handleSearchInput(value) {
+  query = value.trim();
+  renderTracks();
+  clearTimeout(youtubeSearchTimer);
+  if (youtubeSearchController) {
+    youtubeSearchController.abort();
+    youtubeSearchController = null;
+    youtubeSearchRequest++;
+  }
+  if (currentView !== "discover") {
+    clearYouTubeSearch();
+    return;
+  }
+  if (query.length < 2) {
+    clearYouTubeSearch();
+    return;
+  }
+  $("#youtubeSearchSection").classList.remove("hidden");
+  $("#youtubeSearchHeading").textContent = `Hasil YouTube untuk “${query}”`;
+  $("#youtubeSearchResults").innerHTML = "";
+  youtubeSearchResults = [];
+  showYouTubeSearchMessage("Menyiapkan pencarian YouTube...");
+  youtubeSearchTimer = setTimeout(() => searchYouTubeVideos(query), 650);
+}
+
 document.querySelectorAll(".nav-item").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
-$("#searchInput").addEventListener("input", event => { query = event.target.value.trim(); renderTracks(); });
+$("#searchInput").addEventListener("input", event => handleSearchInput(event.target.value));
 $("#addYouTubeButton").addEventListener("click", () => {
   if (!signedInUser) {
     setAuthStatus("Masuk ke akun untuk menyimpan lagu YouTube ke katalog pribadimu.");
@@ -741,10 +1035,11 @@ function persistLocalUserData() {
 function clearActiveUserData() {
   clearTimeout(cloudSaveTimer);
   const playingTrack = currentTrack();
-  if (playingTrack?.isCustomYouTube) {
+  if (playingTrack?.youtubeId) {
     youtubePlayRequest++;
     if (youtubePlayerReady && youtubePlayer) youtubePlayer.pauseVideo();
     currentTrackId = null;
+    activePlaybackTrack = null;
   }
   applyCustomTracks([]);
   applyingCloudData = true;
@@ -760,6 +1055,7 @@ function clearActiveUserData() {
   renderPlaylists();
   renderQueue();
   renderTracks();
+  renderYouTubeSearchResults();
   updatePlayer();
 }
 
@@ -806,7 +1102,7 @@ async function loadCloudData() {
   if (data) {
     favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id)) : [];
     playlists = Array.isArray(data.playlists) ? data.playlists.filter(p => p && p.id && p.name && Array.isArray(p.trackIds)) : [];
-    queue = Array.isArray(data.queue) ? data.queue.filter(id => tracks.some(t => t.id === id)) : [];
+    queue = Array.isArray(data.queue) ? data.queue.filter(id => getTrackById(id)) : [];
   } else {
     // New account: start empty. Never copy another account's browser localStorage into this user.
     applyCustomTracks([]);
@@ -824,6 +1120,7 @@ async function loadCloudData() {
   renderPlaylists();
   renderQueue();
   renderTracks();
+  renderYouTubeSearchResults();
   updatePlayer();
 
   // Create a new, empty row for a first-time account instead of importing browser data.
@@ -914,4 +1211,3 @@ $("#signOutButton").addEventListener("click", async () => {
 });
 
 initializeAccount();
-
