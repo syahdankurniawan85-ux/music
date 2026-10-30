@@ -416,3 +416,8 @@ body::before {
   .youtube-result-play { padding:7px 9px; font-size:9px; }
   .youtube-result-icon { min-width:27px; min-height:27px; padding:3px; }
 }
+
+
+/* RECENTLY PLAYED */
+.nav-item[data-view="recently"] > span:first-child { color: #b79aff; }
+.track-row .track-genre { white-space: nowrap; }

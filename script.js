@@ -66,6 +66,7 @@ function applyCustomTracks(items) {
 const $ = (selector) => document.querySelector(selector);
 const audio = $("#audio");
 let currentTrackId = null;
+let recentlyPlayed = [];
 let currentView = "discover";
 let query = "";
 let shuffle = false;
@@ -95,13 +96,17 @@ function getTrackById(trackId) {
   if (!trackId) return null;
   return tracks.find(track => track.id === trackId)
     || youtubeSearchResults.find(track => track.id === trackId)
-    || (activePlaybackTrack?.id === trackId ? activePlaybackTrack : null);
+    || (activePlaybackTrack?.id === trackId ? activePlaybackTrack : null)
+    || recentlyPlayed.find(track => String(track.id) === String(trackId))
+    || null;
 }
 
 function getTrackByYouTubeId(videoId) {
   return tracks.find(track => track.youtubeId === videoId)
     || youtubeSearchResults.find(track => track.youtubeId === videoId)
-    || (activePlaybackTrack?.youtubeId === videoId ? activePlaybackTrack : null);
+    || (activePlaybackTrack?.youtubeId === videoId ? activePlaybackTrack : null)
+    || recentlyPlayed.find(track => track.youtubeId === videoId)
+    || null;
 }
 
 function promptForAccount(message = "Masuk ke akun NEONWAVE untuk menyimpan lagu dari hasil pencarian.") {
@@ -135,6 +140,37 @@ function readStored(key, fallback) {
   try { const value = JSON.parse(localStorage.getItem(key) || "null"); return value == null ? fallback : value; }
   catch { return fallback; }
 }
+function normalizeRecentlyPlayed(items) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+  return items.filter(item => item && (typeof item.id === "string" || typeof item.id === "number") && typeof item.title === "string" && item.title.trim())
+    .map(item => {
+      const youtubeId = typeof item.youtubeId === "string" && YOUTUBE_ID_PATTERN.test(item.youtubeId) ? item.youtubeId : null;
+      const id = item.id;
+      return {
+        id,
+        title: item.title.trim().slice(0, 100),
+        artist: typeof item.artist === "string" ? item.artist.trim().slice(0, 80) : "YouTube",
+        genre: typeof item.genre === "string" ? item.genre.slice(0, 40) : (youtubeId ? "YouTube" : "Music"),
+        duration: typeof item.duration === "string" ? item.duration.slice(0, 20) : (youtubeId ? "Video" : "--:--"),
+        cover: typeof item.cover === "string" ? item.cover.slice(0, 30) : "cover-7",
+        initials: typeof item.initials === "string" ? item.initials.slice(0, 5) : "NW",
+        audio: typeof item.audio === "string" ? item.audio : null,
+        youtubeId,
+        isYouTubeSearchResult: Boolean(item.isYouTubeSearchResult),
+        playedAt: typeof item.playedAt === "string" && Number.isFinite(Date.parse(item.playedAt)) ? new Date(item.playedAt).toISOString() : new Date(0).toISOString()
+      };
+    })
+    .filter(item => {
+      const key = String(item.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.playedAt) - Date.parse(a.playedAt))
+    .slice(0, 30);
+}
+recentlyPlayed = normalizeRecentlyPlayed(readStored("neonwave-recently-played", []));
 function makeId() { return `pl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
 let playlists = readStored("neonwave-playlists", []);
 let queue = readStored("neonwave-queue", []);
@@ -156,6 +192,43 @@ function saveQueue() {
   catch { showToast("Browser tidak bisa menyimpan antrean."); }
   $("#queueCount").textContent = queue.length;
   scheduleCloudSave();
+}
+function saveRecentlyPlayed() {
+  recentlyPlayed = normalizeRecentlyPlayed(recentlyPlayed);
+  try { localStorage.setItem("neonwave-recently-played", JSON.stringify(recentlyPlayed)); }
+  catch { showToast("Browser tidak bisa menyimpan riwayat pemutaran."); }
+  scheduleCloudSave();
+  if (currentView === "recently") renderTracks();
+}
+function formatPlayedAt(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Baru diputar";
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return "Baru saja";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} menit lalu`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} jam lalu`;
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp));
+}
+function recordRecentlyPlayed(track) {
+  if (!track || (typeof track.id !== "string" && typeof track.id !== "number")) return;
+  const now = Date.now();
+  const latest = recentlyPlayed[0];
+  if (latest && String(latest.id) === String(track.id) && now - Date.parse(latest.playedAt || 0) < 10000) return;
+  const entry = {
+    id: track.id,
+    title: String(track.title || "Untitled").slice(0, 100),
+    artist: String(track.artist || "Unknown artist").slice(0, 80),
+    genre: String(track.genre || (track.youtubeId ? "YouTube" : "Music")).slice(0, 40),
+    duration: String(track.duration || (track.youtubeId ? "Video" : "--:--")).slice(0, 20),
+    cover: String(track.cover || "cover-7").slice(0, 30),
+    initials: String(track.initials || "NW").slice(0, 5),
+    audio: typeof track.audio === "string" ? track.audio : null,
+    youtubeId: typeof track.youtubeId === "string" && YOUTUBE_ID_PATTERN.test(track.youtubeId) ? track.youtubeId : null,
+    isYouTubeSearchResult: Boolean(track.isYouTubeSearchResult),
+    playedAt: new Date(now).toISOString()
+  };
+  recentlyPlayed = [entry, ...recentlyPlayed.filter(item => String(item.id) !== String(entry.id))].slice(0, 30);
+  saveRecentlyPlayed();
 }
 function saveFavorites() {
   try { localStorage.setItem("neonwave-favorites", JSON.stringify(favorites)); }
@@ -179,7 +252,9 @@ function filteredTracks() {
     ? tracks.filter(track => favorites.includes(track.id))
     : currentView === "playlists"
       ? tracks.filter(track => (playlists.find(playlist => playlist.id === activePlaylistId)?.trackIds || []).includes(track.id))
-      : tracks;
+      : currentView === "recently"
+        ? recentlyPlayed.map(entry => getTrackById(entry.id) || entry)
+        : tracks;
   return base.filter(track => `${track.title} ${track.artist} ${track.genre}`.toLowerCase().includes(query.toLowerCase()));
 }
 function renderPlaylists() {
@@ -356,12 +431,14 @@ function renderTracks() {
   const selectedPlaylist = playlists.find(item => item.id === activePlaylistId);
   $("#listHeading").innerHTML = currentView === "favorites" ? 'Your favorites <span class="heading-dot">.</span>' :
     currentView === "playlists" ? `${selectedPlaylist ? selectedPlaylist.name : "Pilih playlist"} <span class="heading-dot">.</span>` :
+    currentView === "recently" ? 'Recently played <span class="heading-dot">.</span>' :
     'Trending tracks <span class="heading-dot">.</span>';
-  $("#listEyebrow").textContent = currentView === "playlists" ? "YOUR COLLECTION" : currentView === "favorites" ? "SAVED TRACKS" : "CURATED FOR YOU";
+  $("#listEyebrow").textContent = currentView === "playlists" ? "YOUR COLLECTION" : currentView === "favorites" ? "SAVED TRACKS" : currentView === "recently" ? "YOUR LISTENING HISTORY" : "CURATED FOR YOU";
   $("#playlistTools").classList.toggle("hidden", currentView !== "playlists");
   $("#emptyState").textContent = currentView === "playlists" && !selectedPlaylist
     ? "Pilih playlist di atas untuk melihat lagu, atau buat playlist baru."
     : currentView === "playlists" ? "Playlist ini masih kosong. Tambahkan lagu lewat tombol playlist pada daftar Discover."
+    : currentView === "recently" ? "Belum ada lagu yang diputar. Putar lagu dari Discover atau hasil pencarian YouTube untuk mengisi riwayatmu."
     : currentView === "discover" && query.length >= 2
       ? "Belum ada lagu di katalog pribadi yang cocok. Hasil pencarian YouTube muncul di atas."
       : "Belum ada lagu yang cocok. Coba kata pencarian lain.";
@@ -395,7 +472,8 @@ function renderTracks() {
       cover.style.backgroundPosition = "center";
       cover.querySelector("span").textContent = "";
     }
-    row.querySelector(".track-genre").textContent = track.genre;
+    const recentEntry = currentView === "recently" ? recentlyPlayed.find(item => String(item.id) === String(track.id)) : null;
+    row.querySelector(".track-genre").textContent = recentEntry ? formatPlayedAt(recentEntry.playedAt) : track.genre;
     row.querySelector(".row-play").addEventListener("click", () => {
       if (currentTrackId === track.id && isPlaybackActive()) pauseTrack();
       else playTrack(track.id);
@@ -409,7 +487,7 @@ function renderTracks() {
 function setView(view) {
   currentView = view;
   document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  $("#viewTitle").textContent = view === "favorites" ? "Favorites" : view === "playlists" ? "Playlists" : "Discover";
+  $("#viewTitle").textContent = view === "favorites" ? "Favorites" : view === "playlists" ? "Playlists" : view === "recently" ? "Recently Played" : "Discover";
   if (view !== "playlists") activePlaylistId = null;
   renderPlaylists();
   renderTracks();
@@ -505,6 +583,7 @@ function handleYouTubeStateChange(event) {
   if (!window.YT) return;
   const state = event.data;
   if (state === window.YT.PlayerState.PLAYING) {
+    recordRecentlyPlayed(currentTrack());
     clearInterval(youtubeSyncTimer);
     youtubeSyncTimer = setInterval(() => updatePlayer(false), 500);
   } else {
@@ -973,7 +1052,7 @@ document.addEventListener("keydown", event => {
 audio.volume = Number($("#volumeBar").value);
 audio.addEventListener("timeupdate", updatePlayer);
 audio.addEventListener("loadedmetadata", updatePlayer);
-audio.addEventListener("play", updatePlayer);
+audio.addEventListener("play", () => { recordRecentlyPlayed(currentTrack()); updatePlayer(); });
 audio.addEventListener("pause", updatePlayer);
 audio.addEventListener("ended", () => { if (!repeat) playNext(1); });
 audio.addEventListener("error", () => {
@@ -1006,7 +1085,7 @@ function updateAccountUI() {
   avatar.textContent = signedInUser ? (signedInUser.email.slice(0, 2).toUpperCase()) : "NW";
   $("#authTitle").textContent = signedInUser ? "Akun NEONWAVE" : (authMode === "login" ? "Masuk ke NEONWAVE" : "Buat akun NEONWAVE");
   $("#authDescription").textContent = signedInUser
-    ? `Login sebagai ${signedInUser.email}. Playlist dan favorit bisa disimpan di database akunmu.`
+    ? `Login sebagai ${signedInUser.email}. Favorites, Playlist, Queue, dan riwayat putar tersinkron ke akunmu.`
     : "Masuk atau daftar untuk menyimpan playlist, antrean, dan favorit ke database.";
   $("#authForm").classList.toggle("hidden", Boolean(signedInUser));
   $("#authModeToggle").classList.toggle("hidden", Boolean(signedInUser));
@@ -1027,6 +1106,7 @@ function persistLocalUserData() {
     localStorage.setItem("neonwave-favorites", JSON.stringify(favorites));
     localStorage.setItem("neonwave-playlists", JSON.stringify(playlists));
     localStorage.setItem("neonwave-queue", JSON.stringify(queue));
+    localStorage.setItem("neonwave-recently-played", JSON.stringify(recentlyPlayed));
   } catch (error) {
     console.warn("NEONWAVE local cache:", error?.message || error);
   }
@@ -1046,6 +1126,7 @@ function clearActiveUserData() {
   favorites = [];
   playlists = [];
   queue = [];
+  recentlyPlayed = [];
   activePlaylistId = null;
   persistLocalUserData();
   applyingCloudData = false;
@@ -1066,6 +1147,7 @@ async function saveCloudData(expectedUserId = signedInUser?.id) {
     favorites,
     playlists,
     queue,
+    recently_played: recentlyPlayed,
     custom_tracks: customTracks.map(track => ({
       title: track.title,
       artist: track.artist,
@@ -1086,12 +1168,14 @@ async function loadCloudData() {
   if (!signedInUser || !supabaseClient) return;
   const loadingUserId = signedInUser.id;
   const { data, error } = await supabaseClient.from("neonwave_user_data")
-    .select("favorites,playlists,queue,custom_tracks").eq("user_id", loadingUserId).maybeSingle();
+    .select("favorites,playlists,queue,custom_tracks,recently_played").eq("user_id", loadingUserId).maybeSingle();
   if (error) {
     console.error("NEONWAVE cloud load:", error.message);
-    showToast(error.message?.includes("custom_tracks")
-      ? "Jalankan SQL migration custom_tracks sebelum memakai fitur tambah lagu."
-      : "Data cloud belum bisa dimuat. Cek konfigurasi database.");
+    showToast(error.message?.includes("recently_played")
+      ? "Jalankan migration recently_played di Supabase terlebih dahulu."
+      : error.message?.includes("custom_tracks")
+        ? "Jalankan SQL migration custom_tracks sebelum memakai fitur tambah lagu."
+        : "Data cloud belum bisa dimuat. Cek konfigurasi database.");
     return;
   }
   // Ignore a late response if the user signed out or switched accounts while loading.
@@ -1100,7 +1184,8 @@ async function loadCloudData() {
   applyingCloudData = true;
   applyCustomTracks(data && Array.isArray(data.custom_tracks) ? data.custom_tracks : []);
   if (data) {
-    favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id)) : [];
+    recentlyPlayed = normalizeRecentlyPlayed(data.recently_played);
+    favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id) || recentlyPlayed.some(track => track.id === id)) : [];
     playlists = Array.isArray(data.playlists) ? data.playlists.filter(p => p && p.id && p.name && Array.isArray(p.trackIds)) : [];
     queue = Array.isArray(data.queue) ? data.queue.filter(id => getTrackById(id)) : [];
   } else {
@@ -1109,6 +1194,7 @@ async function loadCloudData() {
     favorites = [];
     playlists = [];
     queue = [];
+    recentlyPlayed = [];
     activePlaylistId = null;
   }
   persistLocalUserData();
@@ -1211,3 +1297,4 @@ $("#signOutButton").addEventListener("click", async () => {
 });
 
 initializeAccount();
+
