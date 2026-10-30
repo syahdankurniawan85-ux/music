@@ -23,7 +23,6 @@ let cloudSaveTimer = null;
 let cloudReady = false;
 let applyingCloudData = false;
 
-
 function readFavorites() {
   try { return JSON.parse(localStorage.getItem("neonwave-favorites") || "[]"); }
   catch { return []; }
@@ -383,7 +382,6 @@ renderQueue();
 renderTracks();
 updatePlayer();
 
-// ---------------- ACCOUNT + CLOUD DATABASE (Supabase) ----------------
 
 function getSupabaseConfig() {
   const config = window.NEONWAVE_SUPABASE_CONFIG || {};
@@ -415,12 +413,42 @@ function updateAccountUI() {
 function scheduleCloudSave() {
   if (!signedInUser || !supabaseClient || applyingCloudData) return;
   clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(saveCloudData, 700);
+  const scheduledUserId = signedInUser.id;
+  cloudSaveTimer = setTimeout(() => saveCloudData(scheduledUserId), 700);
 }
-async function saveCloudData() {
-  if (!signedInUser || !supabaseClient || applyingCloudData) return;
+
+function persistLocalUserData() {
+  try {
+    localStorage.setItem("neonwave-favorites", JSON.stringify(favorites));
+    localStorage.setItem("neonwave-playlists", JSON.stringify(playlists));
+    localStorage.setItem("neonwave-queue", JSON.stringify(queue));
+  } catch (error) {
+    console.warn("NEONWAVE local cache:", error?.message || error);
+  }
+}
+
+function clearActiveUserData() {
+  clearTimeout(cloudSaveTimer);
+  applyingCloudData = true;
+  favorites = [];
+  playlists = [];
+  queue = [];
+  activePlaylistId = null;
+  persistLocalUserData();
+  applyingCloudData = false;
+  $("#favoriteCount").textContent = "0";
+  $("#playlistCount").textContent = "0";
+  $("#queueCount").textContent = "0";
+  renderPlaylists();
+  renderQueue();
+  renderTracks();
+  updatePlayer();
+}
+
+async function saveCloudData(expectedUserId = signedInUser?.id) {
+  if (!expectedUserId || !signedInUser || signedInUser.id !== expectedUserId || !supabaseClient || applyingCloudData) return;
   const payload = {
-    user_id: signedInUser.id,
+    user_id: expectedUserId,
     favorites,
     playlists,
     queue,
@@ -432,40 +460,47 @@ async function saveCloudData() {
     showToast("Gagal menyimpan ke cloud. Data lokal tetap aman.");
   }
 }
+
 async function loadCloudData() {
   if (!signedInUser || !supabaseClient) return;
+  const loadingUserId = signedInUser.id;
   const { data, error } = await supabaseClient.from("neonwave_user_data")
-    .select("favorites,playlists,queue").eq("user_id", signedInUser.id).maybeSingle();
+    .select("favorites,playlists,queue").eq("user_id", loadingUserId).maybeSingle();
   if (error) {
     console.error("NEONWAVE cloud load:", error.message);
     showToast("Data cloud belum bisa dimuat. Cek konfigurasi database.");
     return;
   }
+  // Ignore a late response if the user signed out or switched accounts while loading.
+  if (!signedInUser || signedInUser.id !== loadingUserId) return;
+
   applyingCloudData = true;
   if (data) {
     favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id)) : [];
     playlists = Array.isArray(data.playlists) ? data.playlists.filter(p => p && p.id && p.name && Array.isArray(p.trackIds)) : [];
     queue = Array.isArray(data.queue) ? data.queue.filter(id => tracks.some(t => t.id === id)) : [];
-    try {
-      localStorage.setItem("neonwave-favorites", JSON.stringify(favorites));
-      localStorage.setItem("neonwave-playlists", JSON.stringify(playlists));
-      localStorage.setItem("neonwave-queue", JSON.stringify(queue));
-    } catch {}
   } else {
-    // First login: upload current browser data as the user's initial cloud library.
-    applyingCloudData = false;
-    await saveCloudData();
-    applyingCloudData = true;
+    // New account: start empty. Never copy another account's browser localStorage into this user.
+    favorites = [];
+    playlists = [];
+    queue = [];
+    activePlaylistId = null;
   }
+  persistLocalUserData();
   applyingCloudData = false;
-  saveFavorites();
-  savePlaylists();
-  saveQueue();
+
+  $("#favoriteCount").textContent = favorites.length;
+  $("#playlistCount").textContent = playlists.length;
+  $("#queueCount").textContent = queue.length;
   renderPlaylists();
   renderQueue();
   renderTracks();
   updatePlayer();
+
+  // Create a new, empty row for a first-time account instead of importing browser data.
+  if (!data) await saveCloudData(loadingUserId);
 }
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   if (!supabaseClient) {
@@ -509,11 +544,18 @@ async function initializeAccount() {
     signedInUser = data.session?.user || null;
     supabaseClient.auth.onAuthStateChange((event, session) => {
       signedInUser = session?.user || null;
+      if (event === "SIGNED_IN" && signedInUser) {
+        clearTimeout(cloudSaveTimer);
+        setTimeout(loadCloudData, 0);
+      }
+      if (event === "SIGNED_OUT") {
+        clearActiveUserData();
+        showToast("Kamu sudah keluar.");
+      }
       updateAccountUI();
-      if (event === "SIGNED_IN" && signedInUser) setTimeout(loadCloudData, 0);
-      if (event === "SIGNED_OUT") showToast("Kamu sudah keluar.");
     });
     if (signedInUser) await loadCloudData();
+    else clearActiveUserData();
   }
   updateAccountUI();
 }
@@ -536,6 +578,7 @@ $("#signOutButton").addEventListener("click", async () => {
   const { error } = await supabaseClient.auth.signOut();
   if (error) return setAuthStatus(error.message, true);
   signedInUser = null;
+  clearActiveUserData();
   updateAccountUI();
   setAuthStatus("Kamu sudah keluar. Data cloud tetap tersimpan di akunmu.");
   $("#authPassword").value = "";
