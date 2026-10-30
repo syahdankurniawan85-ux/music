@@ -91,7 +91,7 @@ body::before {
 .sidebar-note::after {
   content: "";
   position: absolute;
-  width: 100px; height: 100px;
+  width: 120px; height: 120px;
   right: -60px; top: -65px;
   border-radius: 50%;
   border: 1px solid rgba(166,121,255,.25);
