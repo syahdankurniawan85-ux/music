@@ -7,8 +7,61 @@ const tracks = [
   { id: 5, title: "Electric Bloom", artist: "Mira Sol", genre: "Dream Pop", duration: "3:51", cover: "cover-5", initials: "EB", audio: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3" },
   { id: 6, title: "Soft Focus", artist: "The Blue Hours", genre: "Lo-fi", duration: "2:59", cover: "cover-6", initials: "SF", audio: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3" },
   // Ganti judul/artis di bawah dengan metadata video yang sebenarnya jika sudah diketahui.
-  { id: 7, title: "Mbak Bilie (6sentani)", artist: "Nama artis (ubah)", genre: "YouTube", duration: "Video", cover: "cover-7", initials: "YT", youtubeId: "DeCO1sct6GI" }
+  { id: 7, title: "Lagu YouTube (ubah judul)", artist: "Nama artis (ubah)", genre: "YouTube", duration: "Video", cover: "cover-7", initials: "YT", youtubeId: "DeCO1sct6GI" }
 ];
+
+const builtInTracks = [...tracks];
+let customTracks = [];
+const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+
+function extractYouTubeId(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  let url;
+  try { url = new URL(value.trim()); } catch { return null; }
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const allowedHosts = new Set(["youtu.be", "youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"]);
+  if (!allowedHosts.has(host)) return null;
+
+  let videoId = null;
+  if (host === "youtu.be") {
+    videoId = url.pathname.split("/").filter(Boolean)[0] || null;
+  } else {
+    videoId = url.searchParams.get("v");
+    if (!videoId) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const markerIndex = parts.findIndex(part => ["embed", "shorts", "live"].includes(part));
+      if (markerIndex >= 0) videoId = parts[markerIndex + 1] || null;
+    }
+  }
+  return videoId && YOUTUBE_ID_PATTERN.test(videoId) ? videoId : null;
+}
+
+function applyCustomTracks(items) {
+  const seen = new Set(builtInTracks.filter(track => track.youtubeId).map(track => track.youtubeId));
+  const normalized = [];
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!item || typeof item !== "object") return;
+    const videoId = typeof item.youtubeId === "string" && YOUTUBE_ID_PATTERN.test(item.youtubeId) ? item.youtubeId : null;
+    if (!videoId || seen.has(videoId)) return;
+    seen.add(videoId);
+    const title = typeof item.title === "string" ? item.title.trim().slice(0, 100) : "";
+    const artist = typeof item.artist === "string" ? item.artist.trim().slice(0, 80) : "";
+    if (!title) return;
+    normalized.push({
+      id: `yt_${videoId}`,
+      title,
+      artist: artist || "YouTube",
+      genre: "YouTube",
+      duration: "Video",
+      cover: "cover-7",
+      initials: "YT",
+      youtubeId: videoId,
+      isCustomYouTube: true
+    });
+  });
+  customTracks = normalized;
+  tracks.splice(0, tracks.length, ...builtInTracks, ...customTracks);
+}
 
 const $ = (selector) => document.querySelector(selector);
 const audio = $("#audio");
@@ -159,6 +212,68 @@ function addToQueue(trackId) {
   if (!tracks.some(track => track.id === trackId)) return;
   queue.push(trackId); saveQueue(); renderQueue(); showToast("Lagu ditambahkan ke antrean.");
 }
+
+async function addYouTubeTrack(event) {
+  event.preventDefault();
+  if (!signedInUser || !supabaseClient) {
+    showToast("Masuk ke akun NEONWAVE dulu untuk menambahkan lagu.");
+    return;
+  }
+
+  const videoId = extractYouTubeId($("#youtubeUrlInput").value);
+  const title = $("#youtubeTitleInput").value.trim().slice(0, 100);
+  const artist = $("#youtubeArtistInput").value.trim().slice(0, 80);
+  const status = $("#youtubeAddStatus");
+  status.textContent = "";
+
+  if (!videoId) {
+    status.textContent = "Link YouTube tidak valid. Gunakan link video, Shorts, atau youtu.be.";
+    status.classList.add("error");
+    return;
+  }
+  if (!title) {
+    status.textContent = "Isi judul lagu atau video terlebih dahulu.";
+    status.classList.add("error");
+    return;
+  }
+  if (tracks.some(track => track.youtubeId === videoId)) {
+    status.textContent = "Video ini sudah ada di katalog akunmu atau katalog bawaan.";
+    status.classList.add("error");
+    return;
+  }
+
+  const ownerId = signedInUser.id;
+  const previousTracks = [...customTracks];
+  applyCustomTracks([{
+    id: `yt_${videoId}`,
+    title,
+    artist: artist || "YouTube",
+    youtubeId: videoId
+  }, ...customTracks]);
+  renderTracks();
+
+  const submit = $("#youtubeAddSubmit");
+  submit.disabled = true;
+  submit.textContent = "Menyimpan...";
+  clearTimeout(cloudSaveTimer);
+  const saved = await saveCloudData(ownerId);
+  submit.disabled = false;
+  submit.textContent = "＋ Tambahkan lagu";
+
+  if (!saved) {
+    if (signedInUser?.id === ownerId) applyCustomTracks(previousTracks);
+    renderTracks();
+    status.textContent = "Lagu belum tersimpan. Pastikan migrasi SQL custom_tracks sudah dijalankan, lalu coba lagi.";
+    status.classList.add("error");
+    return;
+  }
+
+  $("#youtubeAddForm").reset();
+  $("#youtubeAddDialog").close();
+  renderTracks();
+  showToast("Lagu YouTube berhasil ditambahkan ke katalog akunmu.");
+}
+
 function renderQueue() {
   const host = $("#queueItems"); if (!host) return;
   host.innerHTML = ""; $("#queueCount").textContent = queue.length;
@@ -463,6 +578,19 @@ function playNext(direction = 1) {
 
 document.querySelectorAll(".nav-item").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#searchInput").addEventListener("input", event => { query = event.target.value.trim(); renderTracks(); });
+$("#addYouTubeButton").addEventListener("click", () => {
+  if (!signedInUser) {
+    setAuthStatus("Masuk ke akun untuk menyimpan lagu YouTube ke katalog pribadimu.");
+    updateAccountUI();
+    $("#authDialog").showModal();
+    return;
+  }
+  $("#youtubeAddStatus").textContent = "";
+  $("#youtubeAddStatus").classList.remove("error");
+  $("#youtubeAddDialog").showModal();
+  $("#youtubeUrlInput").focus();
+});
+$("#youtubeAddForm").addEventListener("submit", addYouTubeTrack);
 $("#heroPlay").addEventListener("click", () => {
   const pool = filteredTracks();
   if (pool.length) playTrack(pool[0].id);
@@ -612,6 +740,13 @@ function persistLocalUserData() {
 
 function clearActiveUserData() {
   clearTimeout(cloudSaveTimer);
+  const playingTrack = currentTrack();
+  if (playingTrack?.isCustomYouTube) {
+    youtubePlayRequest++;
+    if (youtubePlayerReady && youtubePlayer) youtubePlayer.pauseVideo();
+    currentTrackId = null;
+  }
+  applyCustomTracks([]);
   applyingCloudData = true;
   favorites = [];
   playlists = [];
@@ -635,35 +770,46 @@ async function saveCloudData(expectedUserId = signedInUser?.id) {
     favorites,
     playlists,
     queue,
+    custom_tracks: customTracks.map(track => ({
+      title: track.title,
+      artist: track.artist,
+      youtubeId: track.youtubeId
+    })),
     updated_at: new Date().toISOString()
   };
   const { error } = await supabaseClient.from("neonwave_user_data").upsert(payload, { onConflict: "user_id" });
   if (error) {
     console.error("NEONWAVE cloud save:", error.message);
     showToast("Gagal menyimpan ke cloud. Data lokal tetap aman.");
+    return false;
   }
+  return true;
 }
 
 async function loadCloudData() {
   if (!signedInUser || !supabaseClient) return;
   const loadingUserId = signedInUser.id;
   const { data, error } = await supabaseClient.from("neonwave_user_data")
-    .select("favorites,playlists,queue").eq("user_id", loadingUserId).maybeSingle();
+    .select("favorites,playlists,queue,custom_tracks").eq("user_id", loadingUserId).maybeSingle();
   if (error) {
     console.error("NEONWAVE cloud load:", error.message);
-    showToast("Data cloud belum bisa dimuat. Cek konfigurasi database.");
+    showToast(error.message?.includes("custom_tracks")
+      ? "Jalankan SQL migration custom_tracks sebelum memakai fitur tambah lagu."
+      : "Data cloud belum bisa dimuat. Cek konfigurasi database.");
     return;
   }
   // Ignore a late response if the user signed out or switched accounts while loading.
   if (!signedInUser || signedInUser.id !== loadingUserId) return;
 
   applyingCloudData = true;
+  applyCustomTracks(data && Array.isArray(data.custom_tracks) ? data.custom_tracks : []);
   if (data) {
     favorites = Array.isArray(data.favorites) ? data.favorites.filter(id => tracks.some(t => t.id === id)) : [];
     playlists = Array.isArray(data.playlists) ? data.playlists.filter(p => p && p.id && p.name && Array.isArray(p.trackIds)) : [];
     queue = Array.isArray(data.queue) ? data.queue.filter(id => tracks.some(t => t.id === id)) : [];
   } else {
     // New account: start empty. Never copy another account's browser localStorage into this user.
+    applyCustomTracks([]);
     favorites = [];
     playlists = [];
     queue = [];

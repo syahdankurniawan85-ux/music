@@ -88,7 +88,13 @@
       </section>
 
       <section class="section-block">
-        <div class="section-heading"><div><p class="eyebrow" id="listEyebrow">CURATED FOR YOU</p><h2 id="listHeading">Trending tracks <span class="heading-dot">.</span></h2></div><span class="track-total" id="trackTotal">06 TRACKS</span></div>
+        <div class="section-heading">
+          <div><p class="eyebrow" id="listEyebrow">CURATED FOR YOU</p><h2 id="listHeading">Trending tracks <span class="heading-dot">.</span></h2></div>
+          <div class="section-heading-actions">
+            <button class="secondary-button add-youtube-button" id="addYouTubeButton" type="button">＋ Tambah YouTube</button>
+            <span class="track-total" id="trackTotal">07 TRACKS</span>
+          </div>
+        </div>
         <div class="track-list" id="trackList" aria-live="polite"></div>
         <p class="empty-state hidden" id="emptyState">Belum ada lagu yang cocok. Coba kata pencarian lain.</p>
       </section>
@@ -138,6 +144,25 @@
       <input id="dialogPlaylistName" type="text" maxlength="40" placeholder="Atau buat playlist baru..." aria-label="Nama playlist baru">
       <button class="secondary-button" type="submit">＋ Buat</button>
     </form>
+  </dialog>
+
+  <dialog class="nw-dialog youtube-add-dialog" id="youtubeAddDialog" aria-labelledby="youtubeAddTitle">
+    <div class="dialog-heading">
+      <div><p class="eyebrow">ADD TO YOUR LIBRARY</p><h2 id="youtubeAddTitle">Tambah lagu YouTube</h2></div>
+      <button class="icon-button dialog-close" data-close-dialog="youtubeAddDialog" type="button" aria-label="Tutup">×</button>
+    </div>
+    <p class="muted small">Tempel link video YouTube, lalu isi judul dan artis. Lagu ini disimpan khusus untuk akun yang sedang login.</p>
+    <form id="youtubeAddForm" class="auth-form youtube-add-form">
+      <label for="youtubeUrlInput">Link YouTube</label>
+      <input id="youtubeUrlInput" name="youtubeUrl" type="url" inputmode="url" placeholder="https://youtu.be/..." required>
+      <label for="youtubeTitleInput">Judul lagu / video</label>
+      <input id="youtubeTitleInput" name="title" type="text" maxlength="100" placeholder="Contoh: Lagu favoritku" required>
+      <label for="youtubeArtistInput">Penyanyi / channel</label>
+      <input id="youtubeArtistInput" name="artist" type="text" maxlength="80" placeholder="Contoh: Nama artis (opsional)">
+      <p class="youtube-add-status" id="youtubeAddStatus" role="status" aria-live="polite"></p>
+      <button class="primary-button" id="youtubeAddSubmit" type="submit">＋ Tambahkan lagu</button>
+    </form>
+    <p class="youtube-note youtube-add-note">Pemutaran menggunakan player resmi YouTube. Sebagian video mungkin tidak mengizinkan embed.</p>
   </dialog>
 
   <dialog class="nw-dialog auth-dialog" id="authDialog" aria-labelledby="authTitle">

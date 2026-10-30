@@ -353,3 +353,21 @@ body::before {
 @media(max-width:760px){.youtube-player-section{margin:20px 0;padding:13px;border-radius:13px}.youtube-panel-heading h2{font-size:14px}.youtube-badge{font-size:7px;padding:5px 7px}.youtube-player-frame{min-height:200px}}
 
 .cover-7{background:linear-gradient(135deg,#ff4c65,#5c2d91)}
+
+
+/* ADD YOUTUBE TRACK — per-account catalog */
+.section-heading-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.add-youtube-button{white-space:nowrap;padding:9px 12px;font-size:11px;border-color:rgba(199,255,94,.22);color:var(--lime,#c7ff5e);background:rgba(199,255,94,.055)}
+.add-youtube-button:hover{border-color:rgba(199,255,94,.48);background:rgba(199,255,94,.11)}
+.youtube-add-dialog{width:min(500px,calc(100vw - 28px))}
+.youtube-add-form{margin-top:14px}
+.youtube-add-form input{width:100%;box-sizing:border-box}
+.youtube-add-form button[disabled]{opacity:.65;cursor:wait}
+.youtube-add-status{min-height:18px;margin:2px 0 0;color:#a8ee9a;font-size:12px;line-height:1.5}
+.youtube-add-status.error{color:#ff9eae}
+.youtube-add-note{margin-top:14px}
+@media(max-width:760px){
+  .section-heading{align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .section-heading-actions{width:100%;justify-content:space-between}
+  .add-youtube-button{font-size:10px;padding:8px 10px}
+}
