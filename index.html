@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090a10">
-  <meta name="description" content="NEONWAVE — temukan suara baru dan putar musik favoritmu.">
-  <title>NEONWAVE — Music for your mood</title>
+  <meta name="description" content="NEONWAVE — cari musik, temukan video, dan putar favoritmu.">
+  <title>NEONWAVE — Discover & Play</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
         <p class="note-title">Find your next favorite.</p>
         <p class="muted small">Musik yang pas untuk setiap mood.</p>
       </div>
-      <div class="sidebar-footer"><span class="status-dot"></span> PLAYER READY <span class="version">v1.0</span></div>
+      <div class="sidebar-footer"><span class="status-dot"></span> PLAYER READY <span class="version">v2.0</span></div>
     </aside>
 
     <main class="main-content">
@@ -38,7 +38,7 @@
         <div class="mobile-brand"><span class="brand-mark">N</span><span>NEON<span class="brand-accent">WAVE</span></span></div>
         <div class="breadcrumb"><span>LIBRARY</span><span class="crumb-slash">/</span><strong id="viewTitle">Discover</strong></div>
         <div class="topbar-actions">
-          <label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Cari lagu atau artis..." autocomplete="off" aria-label="Cari lagu atau artis"><kbd>/</kbd></label>
+          <label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Cari lagu, artis, atau album..." autocomplete="off" aria-label="Cari lagu atau artis"><kbd>/</kbd></label>
           <button class="account-button" id="accountButton" type="button"><span class="account-avatar">NW</span><span id="accountButtonLabel">Masuk</span></button>
         </div>
       </header>
@@ -47,7 +47,7 @@
         <div class="hero-copy">
           <span class="pill"><span class="status-dot"></span> YOUR DAILY FREQUENCY</span>
           <h1>Feel the<br><span>frequency.</span></h1>
-          <p>Temukan suara baru. Atur mood-mu. Putar duniamu sendiri.</p>
+          <p>Cari lagu dan artis favoritmu. Temukan musik baru, lalu putar duniamu sendiri.</p>
           <button class="primary-button" id="heroPlay"><span>▶</span> Putar pilihan</button>
         </div>
         <div class="hero-art" aria-hidden="true">
@@ -56,6 +56,18 @@
           <div class="equalizer"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           <span class="floating-tag tag-top">NOW IN ROTATION</span><span class="floating-tag tag-bottom">VOL. 001 — FEEL GOOD</span>
         </div>
+      </section>
+
+      <section class="youtube-search-section hidden" id="youtubeSearchSection" aria-live="polite" aria-label="Hasil pencarian YouTube">
+        <div class="youtube-search-heading">
+          <div>
+            <p class="eyebrow">DISCOVER · SEARCH</p>
+            <h2 id="youtubeSearchHeading">Cari musik di YouTube</h2>
+          </div>
+          <span class="youtube-search-powered">Powered by <strong>YouTube</strong></span>
+        </div>
+        <p class="youtube-search-status" id="youtubeSearchStatus" role="status">Ketik judul lagu atau nama artis untuk mulai mencari.</p>
+        <div class="youtube-search-results" id="youtubeSearchResults"></div>
       </section>
 
       <section class="youtube-player-section hidden" id="youtubePanel" aria-label="Pemutar video YouTube">
